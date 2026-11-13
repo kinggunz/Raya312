@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Ayaraya config</title><link rel="stylesheet" href="style.css"></head><body>
+<div id="splash"><div class="logo">FF</div><h1>Ayaraya config</h1>
+<div class="bar"><div id="fill"></div></div><div id="pct">0%</div></div>
+
+<div id="menu" class="hidden"><div class="logo">FF</div><h1>Ayaraya config</h1>
+<p class="sub">Viewer &amp; editor model 3D</p>
+<button class="big" id="bOpenMenu">📂 Impor File 3D (dari ZArchiver)</button>
+<p class="note">Ekstrak dulu file dengan ZArchiver ke penyimpanan, lalu pilih di sini.<br>Format: GLB • GLTF • OBJ • FBX • STL • PLY</p></div>
+
+<div id="viewer" class="hidden">
+<div id="topbar"><button id="bBack">←</button><span id="title"></span>
+<button id="bRot">⟳ Layar</button><button id="bPanel">☰</button></div>
+<div id="stage"><canvas id="gl"></canvas><div id="hint">Seret: putar • 2 jari: zoom/geser • Ketuk: pilih bagian</div></div>
+<div id="panel">
+<div id="tabs"><button data-t="t1" class="on">Bagian</button><button data-t="t2">Warna</button><button data-t="t3">Transform</button><button data-t="t4">Tampilan</button><button data-t="t5">Simpan</button><button data-t="t6" id="tabU" class="hidden">Unity</button></div>
+<div id="t1" class="tab"><label>Bagian terpilih<select id="meshSel"></select></label>
+<div class="row"><button id="bHide">Sembunyi/Tampil</button><button id="bDel">Hapus</button><button id="bReset">Reset semua</button></div>
+<div id="info" class="note"></div></div>
+<div id="t2" class="tab hidden">
+<label>Warna<input type="color" id="cCol"></label>
+<label>Cahaya sendiri (emissive)<input type="color" id="cEmi"></label>
+<label>Metalik<input type="range" id="sMet" min="0" max="1" step="0.01"></label>
+<label>Kekasaran<input type="range" id="sRou" min="0" max="1" step="0.01"></label>
+<label>Transparansi<input type="range" id="sOpa" min="0.05" max="1" step="0.01"></label>
+<label class="chk"><input type="checkbox" id="kWire"> Wireframe</label>
+<label class="chk"><input type="checkbox" id="kSide"> Dua sisi</label>
+<div class="row"><button id="bTex">Ganti tekstur</button><button id="bNoTex">Hapus tekstur</button></div></div>
+<div id="t3" class="tab hidden">
+<label>Ukuran<input type="range" id="x_sc" min="0.1" max="4" step="0.01" value="1"></label>
+<label>Putar X<input type="range" id="x_rx" min="-180" max="180" step="1" value="0"></label>
+<label>Putar Y<input type="range" id="x_ry" min="-180" max="180" step="1" value="0"></label>
+<label>Putar Z<input type="range" id="x_rz" min="-180" max="180" step="1" value="0"></label>
+<label>Geser X<input type="range" id="x_px" min="-1" max="1" step="0.005" value="0"></label>
+<label>Geser Y<input type="range" id="x_py" min="-1" max="1" step="0.005" value="0"></label>
+<label>Geser Z<input type="range" id="x_pz" min="-1" max="1" step="0.005" value="0"></label>
+<div class="row"><button id="bMir">Cermin X</button></div></div>
+<div id="t4" class="tab hidden">
+<label>Latar<input type="color" id="cBg" value="#1b1d22"></label>
+<label>Cahaya<input type="range" id="sLight" min="0.2" max="2.5" step="0.05" value="1"></label>
+<label class="chk"><input type="checkbox" id="kGrid" checked> Grid</label>
+<label class="chk"><input type="checkbox" id="kRot"> Putar otomatis</label>
+<label class="chk"><input type="checkbox" id="kAllWire"> Wireframe semua</label>
+<div class="row"><button id="bCam">Reset kamera</button></div></div>
+<div id="t6" class="tab hidden">
+<div id="uInfo" class="note"></div>
+<label>Mesh<select id="uMesh"></select></label>
+<label>Tekstur<select id="uTex"></select></label>
+<canvas id="uPrev"></canvas><div id="uTexInfo" class="note"></div>
+<div class="row"><button id="bUApply">Pasang ke model</button><button id="bURep">Ganti dari gambar…</button><button id="bUPng">Ekspor PNG</button></div>
+<div class="row"><button class="big" id="bUSave">💾 Simpan Bundle Unity</button></div>
+<div class="note">Yang ikut tersimpan ke bundle: penggantian tekstur. Edit warna/transform pada model hanya untuk tampilan &amp; ekspor GLB/OBJ/STL.</div></div>
+<div id="t5" class="tab hidden">
+<label>Format<select id="fmt"><option value="glb">GLB</option><option value="obj">OBJ</option><option value="stl">STL</option></select></label>
+<div class="row"><button class="big" id="bSave">💾 Simpan / Timpa File</button><button id="bOpen">Buka file lain</button></div>
+<div class="note">Di dialog simpan, pilih file lama untuk menimpa, atau beri nama baru.</div></div>
+</div></div>
+<input type="file" id="file" hidden><input type="file" id="texFile" accept="image/*" hidden><input type="file" id="uImg" accept="image/*" hidden>
+<div id="toast"></div>
+<script src="app.js"></script></body></html>
