@@ -1,5 +1,6 @@
 // Pembaca/penulis Unity AssetBundle (UnityFS) - tanpa dependensi
 import COMMON from './common_strings.json';
+import { decodeBlock } from './astc.js';
 
 const utf8 = (b) => new TextDecoder().decode(b);
 const enc = new TextEncoder();
@@ -227,9 +228,12 @@ export function parseVersion(s) {
 
 export function parseSerialized(u8) {
   const r = new R(u8, false);
-  const metaSize = r.u32(), fileSize = r.u32(), version = r.u32(), dataOffset = r.u32();
-  if (version < 16 || version > 21) throw new Error('Versi SerializedFile ' + version + ' belum didukung (16-21)');
-  const endian = r.u8_(); r.pos += 3; r.le = endian === 0;
+  let metaSize = r.u32(), fileSize = r.u32(); const version = r.u32(); let dataOffset = r.u32();
+  if (version < 16 || version > 22) throw new Error('Versi SerializedFile ' + version + ' belum didukung (16-22)');
+  const endian = r.u8_(); r.pos += 3;
+  let wide = false;
+  if (version >= 22) { metaSize = r.u32(); fileSize = Number(r.i64()); dataOffset = Number(r.i64()); r.pos += 8; wide = true; }
+  r.le = endian === 0;
   const unityVersion = r.cstr(); const platform = r.i32(); const hasTree = r.u8_() !== 0;
   const tc = r.i32(); const types = [];
   for (let i = 0; i < tc; i++) {
@@ -243,11 +247,11 @@ export function parseSerialized(u8) {
   const oc = r.i32(); const objects = [];
   for (let i = 0; i < oc; i++) {
     r.align(4);
-    const pathId = r.i64(); const startOff = r.pos; const byteStart = r.u32(); const byteSize = r.u32();
+    const pathId = r.i64(); const startOff = r.pos; const byteStart = wide ? Number(r.i64()) : r.u32(); const byteSize = r.u32();
     const typeId = r.i32();
-    objects.push({ pathId: String(pathId), startOff, sizeOff: startOff + 4, byteStart, byteSize, typeId, classId: types[typeId].classId });
+    objects.push({ pathId: String(pathId), startOff, sizeOff: startOff + (wide ? 8 : 4), byteStart, byteSize, typeId, classId: types[typeId].classId });
   }
-  return { u8, version, dataOffset, le: r.le, unityVersion, uv: parseVersion(unityVersion), platform, hasTree, types, objects };
+  return { u8, version, wide, dataOffset, le: r.le, unityVersion, uv: parseVersion(unityVersion), platform, hasTree, types, objects };
 }
 
 export function rebuildSerialized(sf, repl) {
@@ -257,10 +261,11 @@ export function rebuildSerialized(sf, repl) {
     const bytes = repl.get(o.pathId) || sf.u8.subarray(sf.dataOffset + o.byteStart, sf.dataOffset + o.byteStart + o.byteSize);
     const start = Math.ceil(pos / 8) * 8;
     if (start > pos) parts.push(new Uint8Array(start - pos));
-    hv.setUint32(o.sizeOff - 4, start, sf.le); hv.setUint32(o.sizeOff, bytes.length, sf.le);
+    if (sf.wide) hv.setBigUint64(o.startOff, BigInt(start), sf.le); else hv.setUint32(o.startOff, start, sf.le);
+    hv.setUint32(o.sizeOff, bytes.length, sf.le);
     parts.push(bytes); pos = start + bytes.length;
   }
-  hv.setUint32(4, sf.dataOffset + pos, false);
+  if (sf.wide) hv.setBigInt64(24, BigInt(sf.dataOffset + pos), false); else hv.setUint32(4, sf.dataOffset + pos, false);
   return concat([head, ...parts]);
 }
 
@@ -356,7 +361,7 @@ export function objectName(sf, obj) {
 }
 
 /* ---------------- Texture2D ---------------- */
-export const TEX_FORMATS = { 1: 'Alpha8', 2: 'ARGB4444', 3: 'RGB24', 4: 'RGBA32', 5: 'ARGB32', 7: 'RGB565', 10: 'DXT1', 12: 'DXT5', 13: 'RGBA4444', 14: 'BGRA32', 34: 'ETC_RGB4', 45: 'ETC2_RGB', 46: 'ETC2_RGBA1', 47: 'ETC2_RGBA8', 28: 'DXT1 Crunched', 29: 'DXT5 Crunched', 64: 'ETC_RGB4 Crunched', 65: 'ETC2_RGBA8 Crunched' };
+export const TEX_FORMATS = { 48: 'ASTC 4x4', 49: 'ASTC 5x5', 50: 'ASTC 6x6', 51: 'ASTC 8x8', 52: 'ASTC 10x10', 53: 'ASTC 12x12', 54: 'ASTC RGBA 4x4', 55: 'ASTC RGBA 5x5', 56: 'ASTC RGBA 6x6', 57: 'ASTC RGBA 8x8', 58: 'ASTC RGBA 10x10', 59: 'ASTC RGBA 12x12', 1: 'Alpha8', 2: 'ARGB4444', 3: 'RGB24', 4: 'RGBA32', 5: 'ARGB32', 7: 'RGB565', 10: 'DXT1', 12: 'DXT5', 13: 'RGBA4444', 14: 'BGRA32', 34: 'ETC_RGB4', 45: 'ETC2_RGB', 46: 'ETC2_RGBA1', 47: 'ETC2_RGBA8', 28: 'DXT1 Crunched', 29: 'DXT5 Crunched', 64: 'ETC_RGB4 Crunched', 65: 'ETC2_RGBA8 Crunched' };
 export function getTexture(sf, obj, nodes) {
   const o = readObject(sf, obj);
   const w = o.get('m_Width'), h = o.get('m_Height'), fmt = o.get('m_TextureFormat');
@@ -500,6 +505,15 @@ export function decodeTexture(t) {
       }
       break;
     }
+    case 48: case 49: case 50: case 51: case 52: case 53: case 54: case 55: case 56: case 57: case 58: case 59: {
+      const bs = [4, 5, 6, 8, 10, 12][(f - 48) % 6]; const bw = Math.ceil(w / bs), bh = Math.ceil(h / bs); need(bw * bh * 16);
+      const blk = new Uint8Array(bs * bs * 4);
+      for (let by = 0; by < bh; by++) for (let bx = 0; bx < bw; bx++) {
+        decodeBlock(d.subarray((by * bw + bx) * 16, (by * bw + bx) * 16 + 16), bs, bs, blk);
+        for (let y = 0; y < bs; y++) { const Y = by * bs + y; if (Y >= h) break; for (let x = 0; x < bs; x++) { const X = bx * bs + x; if (X >= w) break; const q = (y * bs + x) * 4; setBU(X, Y, blk[q], blk[q + 1], blk[q + 2], blk[q + 3]); } }
+      }
+      break;
+    }
     default: throw new Error('Format tekstur ' + (TEX_FORMATS[f] || f) + ' belum bisa ditampilkan (bisa tetap diganti)');
   }
   return out;
@@ -547,40 +561,90 @@ function normFmt(fmt, uv) {
   if (uv[0] < 2018) return [0, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11][fmt] ?? 0;
   return fmt;
 }
+function unpackInts(pv) {
+  const n = pv.m_NumItems, bits = pv.m_BitSize, data = pv.m_Data; const out = new Int32Array(n);
+  if (!bits) return out;
+  let ip = 0, bp = 0;
+  for (let i = 0; i < n; i++) {
+    let b = 0, v = 0;
+    while (b < bits) { v |= (data[ip] >> bp) << b; const num = Math.min(bits - b, 8 - bp); bp += num; b += num; if (bp === 8) { ip++; bp = 0; } }
+    out[i] = bits >= 31 ? v : v & ((1 << bits) - 1);
+  }
+  return out;
+}
+function unpackFloats(pv, per, strideBytes, start = 0, numChunks = -1) {
+  const bits = pv.m_BitSize; let bitPos = bits * start; let ip = Math.floor(bitPos / 8); bitPos %= 8;
+  if (numChunks < 0) numChunks = Math.floor(pv.m_NumItems / per);
+  const out = new Float32Array(numChunks * per); let o = 0;
+  const maxv = Math.pow(2, bits) - 1;
+  for (let c = 0; c < numChunks; c++) for (let i = 0; i < per; i++) {
+    let x = 0, b = 0;
+    while (b < bits) { x += ((pv.m_Data[ip] >> bitPos) & ((1 << Math.min(8 - bitPos, bits - b)) - 1)) * Math.pow(2, b); const num = Math.min(bits - b, 8 - bitPos); bitPos += num; b += num; if (bitPos === 8) { ip++; bitPos = 0; } }
+    out[o++] = maxv ? (x * pv.m_Range) / maxv + pv.m_Start : pv.m_Start;
+  }
+  return out;
+}
+function readCompressed(o) {
+  const cm = o.get('m_CompressedMesh'); const vc = Math.floor(cm.m_Vertices.m_NumItems / 3);
+  const pos = unpackFloats(cm.m_Vertices, 3, 12);
+  let uvs = null;
+  if (cm.m_UV.m_NumItems > 0) {
+    const info = cm.m_UVInfo >>> 0;
+    if (info) { let src = 0; for (let uv = 0; uv < 8; uv++) { const tb = (info >>> (uv * 4)) & 15; if (tb & 4) { const dim = 1 + (tb & 3); if (uv === 0 && dim >= 2) { const raw = unpackFloats(cm.m_UV, dim, dim * 4, src, vc); uvs = new Float32Array(vc * 2); for (let i = 0; i < vc; i++) { uvs[i * 2] = raw[i * dim]; uvs[i * 2 + 1] = raw[i * dim + 1]; } } src += dim * vc; } } }
+    else uvs = unpackFloats(cm.m_UV, 2, 8, 0, vc);
+  }
+  let nrm = null;
+  if (cm.m_Normals.m_NumItems > 0) {
+    const nd = unpackFloats(cm.m_Normals, 2, 8); const sg = unpackInts(cm.m_NormalSigns); nrm = new Float32Array(vc * 3);
+    for (let i = 0; i < vc; i++) {
+      let x = nd[i * 2], y = nd[i * 2 + 1]; const zz = 1 - x * x - y * y; let z;
+      if (zz >= 0) z = Math.sqrt(zz); else { z = 0; const l = Math.hypot(x, y) || 1; x /= l; y /= l; }
+      if (sg[i] === 0) z = -z; nrm[i * 3] = x; nrm[i * 3 + 1] = y; nrm[i * 3 + 2] = z;
+    }
+  }
+  return { vc, pos, nrm, uvs, tri: unpackInts(cm.m_Triangles) };
+}
 export function readMesh(sf, obj) {
   const o = readObject(sf, obj); const uv = sf.uv;
   const vd = o.get('m_VertexData'); if (!vd) throw new Error('Mesh tanpa m_VertexData');
-  const vc = vd.m_VertexCount;
-  if (!vc) throw new Error('Mesh terkompresi / kosong (belum didukung)');
-  const data = vd.m_DataSize; const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
-  const chans = vd.m_Channels;
-  // channel index -> semantik
-  const sem = uv[0] >= 2018 ? { pos: 0, nrm: 1, col: 3, uv0: 4 } : { pos: 0, nrm: 1, col: 2, uv0: 3 };
-  const maxStream = Math.max(...chans.map((c) => c.stream));
-  const stride = new Array(maxStream + 1).fill(0), sOff = [];
-  chans.forEach((c) => { const dim = c.dimension & 15; if (dim) stride[c.stream] += dim * FSZ[normFmt(c.format, uv)]; });
-  let acc = 0; for (let s = 0; s <= maxStream; s++) { sOff[s] = acc; acc += vc * stride[s]; acc = (acc + 15) & ~15; }
-  const read = (ci, ncomp) => {
-    const c = chans[ci]; const dim = c.dimension & 15; if (!dim) return null;
-    const fmt = normFmt(c.format, uv); const out = new Float32Array(vc * ncomp);
-    for (let i = 0; i < vc; i++) for (let k = 0; k < ncomp; k++) {
-      out[i * ncomp + k] = k < dim ? readComp(dv, sOff[c.stream] + i * stride[c.stream] + c.offset + k * FSZ[fmt], fmt) : (k === 3 ? 1 : 0);
-    }
-    return out;
-  };
-  const pos = read(sem.pos, 3); if (!pos) throw new Error('Mesh tanpa posisi');
-  const nrm = read(sem.nrm, 3), uvs = read(sem.uv0, 2);
-  // indeks
-  const ib = o.get('m_IndexBuffer'); const is32 = o.get('m_IndexFormat') !== undefined ? o.get('m_IndexFormat') === 1 : !o.get('m_Use16BitIndices');
-  const idv = new DataView(ib.buffer, ib.byteOffset, ib.byteLength); const isz = is32 ? 4 : 2;
-  const tris = [];
-  for (const sm of o.get('m_SubMeshes')) {
-    const first = sm.firstByte / isz; const n = sm.indexCount; const base = sm.baseVertex || 0;
-    const get = (i) => (is32 ? idv.getUint32((first + i) * 4, true) : idv.getUint16((first + i) * 2, true)) + base;
-    if (sm.topology === 0 || sm.topology === undefined) for (let i = 0; i + 2 < n; i += 3) tris.push(get(i), get(i + 2), get(i + 1));
-    else if (sm.topology === 1) for (let i = 0; i + 2 < n; i++) i % 2 ? tris.push(get(i), get(i + 1), get(i + 2)) : tris.push(get(i), get(i + 2), get(i + 1));
+  let vc = vd.m_VertexCount, pos, nrm, uvs, tri = null;
+  if (!vc && o.get('m_CompressedMesh')) {
+    const c = readCompressed(o); vc = c.vc; pos = c.pos; nrm = c.nrm; uvs = c.uvs; tri = c.tri;
+    if (!vc) throw new Error('Mesh kosong');
+  } else {
+    if (!vc) throw new Error('Mesh kosong');
+    const data = vd.m_DataSize; const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    const chans = vd.m_Channels;
+    const sem = uv[0] >= 2018 ? { pos: 0, nrm: 1, col: 3, uv0: 4 } : { pos: 0, nrm: 1, col: 2, uv0: 3 };
+    const maxStream = Math.max(...chans.map((c) => c.stream));
+    const stride = new Array(maxStream + 1).fill(0), sOff = [];
+    chans.forEach((c) => { const dim = c.dimension & 15; if (dim) stride[c.stream] += dim * FSZ[normFmt(c.format, uv)]; });
+    let acc = 0; for (let s = 0; s <= maxStream; s++) { sOff[s] = acc; acc += vc * stride[s]; acc = (acc + 15) & ~15; }
+    const read = (ci, ncomp) => {
+      const c = chans[ci]; const dim = c.dimension & 15; if (!dim) return null;
+      const fmt = normFmt(c.format, uv); const out = new Float32Array(vc * ncomp);
+      for (let i = 0; i < vc; i++) for (let k = 0; k < ncomp; k++) out[i * ncomp + k] = k < dim ? readComp(dv, sOff[c.stream] + i * stride[c.stream] + c.offset + k * FSZ[fmt], fmt) : (k === 3 ? 1 : 0);
+      return out;
+    };
+    pos = read(sem.pos, 3); if (!pos) throw new Error('Mesh tanpa posisi');
+    nrm = read(sem.nrm, 3); uvs = read(sem.uv0, 2);
   }
-  // Unity kidal -> three kanan: balik sumbu X
+  const tris = [];
+  if (tri) {
+    for (const sm of o.get('m_SubMeshes')) {
+      const first = sm.firstByte / 2, n = sm.indexCount, base = sm.baseVertex || 0;
+      for (let i = 0; i + 2 < n; i += 3) tris.push(tri[first + i] + base, tri[first + i + 2] + base, tri[first + i + 1] + base);
+    }
+  } else {
+    const ib = o.get('m_IndexBuffer'); const is32 = o.get('m_IndexFormat') !== undefined ? o.get('m_IndexFormat') === 1 : !o.get('m_Use16BitIndices');
+    const idv = new DataView(ib.buffer, ib.byteOffset, ib.byteLength); const isz = is32 ? 4 : 2;
+    for (const sm of o.get('m_SubMeshes')) {
+      const first = sm.firstByte / isz; const n = sm.indexCount; const base = sm.baseVertex || 0;
+      const get = (i) => (is32 ? idv.getUint32((first + i) * 4, true) : idv.getUint16((first + i) * 2, true)) + base;
+      if (sm.topology === 0 || sm.topology === undefined) for (let i = 0; i + 2 < n; i += 3) tris.push(get(i), get(i + 2), get(i + 1));
+      else if (sm.topology === 1) for (let i = 0; i + 2 < n; i++) i % 2 ? tris.push(get(i), get(i + 1), get(i + 2)) : tris.push(get(i), get(i + 2), get(i + 1));
+    }
+  }
   for (let i = 0; i < vc; i++) { pos[i * 3] = -pos[i * 3]; if (nrm) nrm[i * 3] = -nrm[i * 3]; }
   return { name: o.get('m_Name'), positions: pos, normals: nrm, uvs, indices: Uint32Array.from(tris) };
 }

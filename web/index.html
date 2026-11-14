@@ -8,14 +8,15 @@
 <div id="menu" class="hidden"><div class="logo">FF</div><h1>Ayaraya config</h1>
 <p class="sub">Viewer &amp; editor model 3D</p>
 <button class="big" id="bOpenMenu">📂 Impor File 3D (dari ZArchiver)</button>
-<p class="note">Ekstrak dulu file dengan ZArchiver ke penyimpanan, lalu pilih di sini.<br>Format: GLB • GLTF • OBJ • FBX • STL • PLY</p></div>
+<button class="big" id="bNew">🧊 Buat Model 3D Baru</button>
+<p class="note">Atau buat model dari bentuk dasar lalu ekspor.<br>Ekstrak dulu file dengan ZArchiver ke penyimpanan, lalu pilih di sini.<br>Format: GLB • GLTF • OBJ • FBX • STL • PLY</p></div>
 
 <div id="viewer" class="hidden">
 <div id="topbar"><button id="bBack">←</button><span id="title"></span>
 <button id="bRot">⟳ Layar</button><button id="bPanel">☰</button></div>
 <div id="stage"><canvas id="gl"></canvas><div id="hint">Seret: putar • 2 jari: zoom/geser • Ketuk: pilih bagian</div></div>
 <div id="panel">
-<div id="tabs"><button data-t="t1" class="on">Bagian</button><button data-t="t2">Warna</button><button data-t="t3">Transform</button><button data-t="t4">Tampilan</button><button data-t="t5">Simpan</button><button data-t="t6" id="tabU" class="hidden">Unity</button></div>
+<div id="tabs"><button data-t="t1" class="on">Bagian</button><button data-t="t2">Warna</button><button data-t="t3">Transform</button><button data-t="t4">Tampilan</button><button data-t="t5">Ekspor</button><button data-t="t6" id="tabU" class="hidden">Unity</button><button data-t="t7" id="tabC" class="hidden">Buat</button></div>
 <div id="t1" class="tab"><label>Bagian terpilih<select id="meshSel"></select></label>
 <div class="row"><button id="bHide">Sembunyi/Tampil</button><button id="bDel">Hapus</button><button id="bReset">Reset semua</button></div>
 <div id="info" class="note"></div></div>
@@ -52,6 +53,17 @@
 <div class="row"><button id="bUApply">Pasang ke model</button><button id="bURep">Ganti dari gambar…</button><button id="bUPng">Ekspor PNG</button></div>
 <div class="row"><button class="big" id="bUSave">💾 Simpan Bundle Unity</button></div>
 <div class="note">Yang ikut tersimpan ke bundle: penggantian tekstur. Edit warna/transform pada model hanya untuk tampilan &amp; ekspor GLB/OBJ/STL.</div></div>
+<div id="t7" class="tab hidden">
+<div class="note">Ketuk bentuk untuk menambah. Ketuk objek untuk memilih, lalu geser dengan gizmo. Warna/material ada di tab Warna.</div>
+<div class="row">
+<button data-prim="box">Kubus</button><button data-prim="sphere">Bola</button><button data-prim="cyl">Silinder</button><button data-prim="cone">Kerucut</button>
+<button data-prim="torus">Donat</button><button data-prim="capsule">Kapsul</button><button data-prim="ico">Poligon</button><button data-prim="plane">Bidang</button></div>
+<label>Ukuran baru<input type="range" id="nSize" min="0.2" max="3" step="0.1" value="1"></label>
+<label>Warna baru<input type="color" id="nColor" value="#4da3ff"></label>
+<div class="row"><button id="bTM">Pindah</button><button id="bTR">Putar</button><button id="bTS">Skala</button></div>
+<label class="chk"><input type="checkbox" id="kSnap"> Snap (langkah tetap)</label>
+<div class="row"><button id="bDup">Duplikat</button><button id="bDel2">Hapus</button><button id="bClr">Kosongkan</button></div>
+<div class="note">Selesai? Buka tab Ekspor untuk simpan ke GLB / OBJ / STL.</div></div>
 <div id="t5" class="tab hidden">
 <label>Format<select id="fmt"><option value="glb">GLB</option><option value="obj">OBJ</option><option value="stl">STL</option></select></label>
 <div class="row"><button class="big" id="bSave">💾 Simpan / Timpa File</button><button id="bOpen">Buka file lain</button></div>

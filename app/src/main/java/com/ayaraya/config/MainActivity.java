@@ -1,6 +1,7 @@
 package com.ayaraya.config;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
@@ -9,6 +10,7 @@ import android.os.Bundle;
 import android.util.Base64;
 import android.view.View;
 import android.webkit.JavascriptInterface;
+import android.webkit.JsResult;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -38,6 +40,23 @@ public class MainActivity extends Activity {
         s.setAllowUniversalAccessFromFileURLs(true);
         web.addJavascriptInterface(new Bridge(), "Android");
         web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onJsAlert(WebView v, String url, String msg, final JsResult r) {
+                new AlertDialog.Builder(MainActivity.this).setMessage(msg)
+                        .setPositiveButton("OK", (d, i) -> r.confirm())
+                        .setOnCancelListener(d -> r.cancel()).show();
+                return true;
+            }
+
+            @Override
+            public boolean onJsConfirm(WebView v, String url, String msg, final JsResult r) {
+                new AlertDialog.Builder(MainActivity.this).setMessage(msg)
+                        .setPositiveButton("OK", (d, i) -> r.confirm())
+                        .setNegativeButton("Batal", (d, i) -> r.cancel())
+                        .setOnCancelListener(d -> r.cancel()).show();
+                return true;
+            }
+
             @Override
             public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb, FileChooserParams p) {
                 if (chooser != null) chooser.onReceiveValue(null);

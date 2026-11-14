@@ -8,6 +8,7 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { OBJExporter } from 'three/examples/jsm/exporters/OBJExporter.js';
 import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import * as U from './unity.js';
 
 const $ = (id) => document.getElementById(id);
@@ -32,7 +33,7 @@ const timer = setInterval(() => {
 }, 40);
 
 /* ---------- Viewer ---------- */
-let renderer, scene, camera, controls, grid, dirLight, hemi, boxHelper;
+let renderer, scene, camera, controls, grid, dirLight, hemi, boxHelper, tc, gizmoOn = false, primCount = 0;
 let root = null, sel = null, meshes = [], modelSize = 1, origBuf = null, origName = 'model.glb';
 let curTab = 't1';
 
@@ -56,6 +57,10 @@ function initViewer() {
   controls.screenSpacePanning = true;
   controls.zoomSpeed = 1.4;
   controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+  tc = new TransformControls(camera, renderer.domElement);
+  scene.add(tc.getHelper());
+  tc.addEventListener('dragging-changed', (e) => { controls.enabled = !e.value; });
+  tc.addEventListener('objectChange', () => { if (sel) { delete sel.userData.b; delete sel.userData.ui; } });
   renderer.setAnimationLoop(() => {
     controls.update();
     if (boxHelper && sel) boxHelper.update();
@@ -71,7 +76,7 @@ function initViewer() {
   cv.addEventListener('pointerup', (e) => {
     if (!down) return;
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-    if (moved < 7 && Date.now() - down.t < 450) pick(e);
+    if (moved < 7 && Date.now() - down.t < 450 && !tc.axis && !tc.dragging) pick(e);
     down = null;
   });
 }
@@ -144,9 +149,11 @@ function installRoot(obj, name, type) {
     o.material = Array.isArray(o.material) ? o.material.map(toStd) : toStd(o.material);
   });
   const box = new THREE.Box3().setFromObject(root);
-  const size = box.getSize(new THREE.Vector3());
-  root.position.sub(box.getCenter(new THREE.Vector3()));
+  const size = box.isEmpty() ? new THREE.Vector3(4, 0, 4) : box.getSize(new THREE.Vector3());
+  if (!box.isEmpty()) root.position.sub(box.getCenter(new THREE.Vector3()));
   modelSize = Math.max(size.x, size.y, size.z) || 1;
+  gizmoOn = type === 'new';
+  $('tabC').classList.toggle('hidden', type !== 'new');
   grid.position.y = -size.y / 2; grid.scale.setScalar(modelSize / 5);
   camera.near = modelSize / 1000; camera.far = modelSize * 1000; camera.updateProjectionMatrix();
   controls.minDistance = modelSize * 0.02; controls.maxDistance = modelSize * 60;
@@ -155,8 +162,9 @@ function installRoot(obj, name, type) {
   origName = name;
   $('title').textContent = name;
   $('fmt').value = ['glb', 'obj', 'stl'].includes(type) ? type : 'glb';
+  if (type === 'new') primCount = 0;
   show('viewer'); resize();
-  if (type !== 'unity') { $('tabU').classList.add('hidden'); toast('Model dimuat (' + type.toUpperCase() + ')'); }
+  if (type !== 'unity') { $('tabU').classList.add('hidden'); toast(type === 'new' ? 'Proyek 3D baru' : 'Model dimuat (' + type.toUpperCase() + ')'); }
 }
 function resetCam() {
   camera.position.set(0, modelSize * 0.3, modelSize * 1.8);
@@ -184,6 +192,7 @@ async function openUnity(buf, name) {
   ub = { b, files, name, tex: [], mesh: [] };
   origBuf = buf; origName = name;
   collectUnity();
+  ub.mesh.sort((a, c) => c.size - a.size);
   if (!ub.tex.length && !ub.mesh.length) { alert('Bundle ini tidak berisi Texture2D atau Mesh.\nIsi: ' + files.map((f) => f.sf.objects.length + ' objek').join(', ')); return; }
   initViewer();
   $('tabU').classList.remove('hidden');
@@ -200,7 +209,7 @@ function collectUnity() {
   ub.tex = []; ub.mesh = [];
   for (const f of ub.files) for (const o of f.sf.objects) {
     if (o.classId === 28) ub.tex.push({ f, id: o.pathId, name: U.objectName(f.sf, o) || 'Texture' });
-    else if (o.classId === 43) ub.mesh.push({ f, id: o.pathId, name: U.objectName(f.sf, o) || 'Mesh' });
+    else if (o.classId === 43) ub.mesh.push({ f, id: o.pathId, size: o.byteSize, name: U.objectName(f.sf, o) || 'Mesh' });
   }
 }
 const uObj = (e) => e.f.sf.objects.find((o) => o.pathId === e.id);
@@ -231,6 +240,11 @@ function uShowMesh() {
     pl.name = 'Bidang pratinjau'; grp.add(pl);
   }
   installRoot(grp, ub.name, 'unity');
+  if (ub.mesh.length) { // pilih tekstur yang namanya cocok dengan mesh (mis. 'headphone')
+    const mn = ub.mesh[+$('uMesh').value].name.toLowerCase();
+    const i = ub.tex.findIndex((t) => mn.length > 2 && t.name.toLowerCase().includes(mn));
+    if (i >= 0) { $('uTex').value = i; uPreview(true); }
+  }
   uApplyTex(true);
 }
 async function uApplyTex(silent) {
@@ -287,6 +301,54 @@ on('bUSave', 'click', () => {
   catch (er) { toast('Gagal simpan bundle: ' + er.message); }
 });
 
+
+/* ---------- Buat Model 3D ---------- */
+function openCreator() {
+  ub = null; origBuf = null; origName = 'model_baru.glb';
+  installRoot(new THREE.Group(), 'Model Baru', 'new');
+  $('tabU').classList.add('hidden');
+  document.querySelector('#tabs button[data-t="t7"]').click();
+  document.body.classList.remove('nopanel');
+  camera.position.set(2.5, 2.2, 4.5); controls.target.set(0, 0.5, 0); controls.update();
+}
+const PRIMS = {
+  box: ['Kubus', (s) => new THREE.BoxGeometry(s, s, s)],
+  sphere: ['Bola', (s) => new THREE.SphereGeometry(s / 2, 32, 20)],
+  cyl: ['Silinder', (s) => new THREE.CylinderGeometry(s / 2, s / 2, s, 32)],
+  cone: ['Kerucut', (s) => new THREE.ConeGeometry(s / 2, s, 32)],
+  torus: ['Donat', (s) => new THREE.TorusGeometry(s / 2, s / 6, 16, 48)],
+  capsule: ['Kapsul', (s) => new THREE.CapsuleGeometry(s / 4, s / 2, 8, 16)],
+  ico: ['Poligon', (s) => new THREE.IcosahedronGeometry(s / 2, 1)],
+  plane: ['Bidang', (s) => new THREE.PlaneGeometry(s, s)],
+};
+function addMesh(m) {
+  m.userData.uniq = true; root.add(m); refreshList(); setSel(m);
+}
+document.querySelectorAll('[data-prim]').forEach((b) => b.addEventListener('click', () => {
+  if (!root) return;
+  const [label, mk] = PRIMS[b.dataset.prim]; const s = +$('nSize').value;
+  const m = new THREE.Mesh(mk(s), new THREE.MeshStandardMaterial({ color: $('nColor').value, roughness: 0.5, metalness: 0.1, side: b.dataset.prim === 'plane' ? THREE.DoubleSide : THREE.FrontSide }));
+  m.name = label + ' ' + (++primCount);
+  m.position.set(((primCount - 1) % 5 - 2) * s * 1.4, b.dataset.prim === 'plane' ? 0.01 : s / 2, 0);
+  addMesh(m);
+}));
+on('bDup', 'click', () => {
+  if (!sel) return toast('Pilih objek dulu (ketuk objek)');
+  const c = sel.clone(); c.material = Array.isArray(sel.material) ? sel.material.map((x) => x.clone()) : sel.material.clone();
+  c.userData = {}; c.name = sel.name + ' salinan'; c.position.x += modelSize * 0.08; addMesh(c);
+});
+on('bDel2', 'click', () => $('bDel').click());
+on('bClr', 'click', () => { if (confirm('Hapus semua objek dan mulai dari awal?')) openCreator(); });
+on('bTM', 'click', () => tc.setMode('translate'));
+on('bTR', 'click', () => tc.setMode('rotate'));
+on('bTS', 'click', () => tc.setMode('scale'));
+on('kSnap', 'change', (e) => {
+  tc.setTranslationSnap(e.target.checked ? 0.25 : null);
+  tc.setRotationSnap(e.target.checked ? THREE.MathUtils.degToRad(15) : null);
+  tc.setScaleSnap(e.target.checked ? 0.1 : null);
+});
+on('bNew', 'click', () => { initViewer(); openCreator(); });
+
 /* ---------- Daftar bagian & seleksi ---------- */
 function refreshList() {
   meshes = [];
@@ -307,6 +369,7 @@ on('meshSel', 'change', () => { const i = +$('meshSel').value; setSel(i < 0 ? nu
 function setSel(m) {
   if (boxHelper) { scene.remove(boxHelper); boxHelper = null; }
   sel = m;
+  if (tc) { if (m && gizmoOn) tc.attach(m); else tc.detach(); }
   if (m) {
     boxHelper = new THREE.BoxHelper(m, 0xffcc00); scene.add(boxHelper);
     uniq(m);
@@ -426,13 +489,17 @@ on('bRot', 'click', () => {
   toast(['Layar: Otomatis', 'Layar: Landscape', 'Layar: Tegak'][rotMode]);
 });
 on('bPanel', 'click', () => { document.body.classList.toggle('nopanel'); setTimeout(resize, 60); });
-on('bBack', 'click', () => { show('menu'); });
+function leave() {
+  if (gizmoOn && meshes.length && !confirm('Keluar dari proyek? Model yang belum diekspor akan hilang.')) return;
+  setSel(null); show('menu');
+}
+on('bBack', 'click', leave);
 document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => {
   document.querySelectorAll('#tabs button').forEach((x) => x.classList.toggle('on', x === b));
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('hidden', t.id !== b.dataset.t));
 }));
 window.handleBack = () => {
-  if (!$('viewer').classList.contains('hidden')) { show('menu'); return true; }
+  if (!$('viewer').classList.contains('hidden')) { leave(); return true; }
   return false;
 };
 window.addEventListener('resize', () => renderer && resize());

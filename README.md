@@ -7,3 +7,5 @@ Ubah tampilan: edit web/src/main.js lalu `npm i && npx esbuild web/src/main.js -
 ## Unity AssetBundle
 Buka file bundle (UnityFS; kompresi none/LZ4/LZMA). Tab "Unity": pilih mesh & tekstur, "Ganti dari gambar", lalu "Simpan Bundle Unity".
 Tekstur pengganti ditulis sebagai RGBA32 (ukuran asli tekstur). Tekstur ASTC/Crunch belum bisa ditampilkan (tetap bisa diganti).
+
+Catatan: bundle Free Fire memakai SerializedFile v22, tekstur ASTC (8x8/10x10) dan mesh terkompresi. Semuanya sudah didukung (diuji pada file asli, hasil identik dengan UnityPy).
